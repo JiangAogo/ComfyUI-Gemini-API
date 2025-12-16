@@ -17,7 +17,7 @@ class GeminiLLMNode:
                     "multiline": False,
                     "default": "enter the host"
                 }),
-                "model": (["gemini-3-pro-preview", "gemini-2.0-flash-exp", "gemini-1.5-pro"], {
+                "model": (["gemini-3-pro-preview"], {
                     "default": "gemini-3-pro-preview"
                 }),
                 "prompt": ("STRING", {
@@ -26,6 +26,10 @@ class GeminiLLMNode:
                 }),
             },
             "optional": {
+                "system_prompt": ("STRING", {
+                    "multiline": True,
+                    "default": ""
+                }),
                 "image": ("IMAGE",),
             }
         }
@@ -34,6 +38,10 @@ class GeminiLLMNode:
     RETURN_NAMES = ("text",)
     FUNCTION = "generate_text"
     CATEGORY = "text/generation"
+    
+    @classmethod
+    def IS_CHANGED(cls, **kwargs):
+        return float("NaN")
     
     def __init__(self):
         self.client = None
@@ -52,12 +60,12 @@ class GeminiLLMNode:
     def _tensor_to_pil(self, tensor):
         # tensor shape: [B, H, W, C]
         if len(tensor.shape) == 4:
-            tensor = tensor[0]  # 取第一张图片
+            tensor = tensor[0]
         
         numpy_image = (tensor.cpu().numpy() * 255).astype(np.uint8)
         return Image.fromarray(numpy_image)
     
-    def generate_text(self, api_key, host, model, prompt, image=None):
+    def generate_text(self, api_key, host, model, prompt, system_prompt=None, image=None):
         try:
             self._init_client(api_key, host)
 
@@ -71,12 +79,27 @@ class GeminiLLMNode:
             contents.append(prompt)
             
             print(f"使用模型: {model}")
-            print(f"提示词: {prompt[:100]}..." if len(prompt) > 100 else f"提示词: {prompt}")
+            if system_prompt and system_prompt.strip():
+                print(f"系统提示词: {system_prompt[:100]}..." if len(system_prompt) > 100 else f"系统提示词: {system_prompt}")
+            print(f"用户提示词: {prompt[:100]}..." if len(prompt) > 100 else f"用户提示词: {prompt}")
             
-            response = self.client.models.generate_content(
-                model=model,
-                contents=contents
-            )
+            config = None
+            if system_prompt and system_prompt.strip():
+                config = types.GenerateContentConfig(
+                    system_instruction=system_prompt
+                )
+            
+            if config:
+                response = self.client.models.generate_content(
+                    model=model,
+                    contents=contents,
+                    config=config
+                )
+            else:
+                response = self.client.models.generate_content(
+                    model=model,
+                    contents=contents
+                )
             
             result_text = response.text
             print(f"生成的文本长度: {len(result_text)} 字符")
@@ -89,7 +112,6 @@ class GeminiLLMNode:
             return (error_msg,)
 
 
-# ComfyUI节点注册
 NODE_CLASS_MAPPINGS = {
     "GeminiLLM": GeminiLLMNode
 }
